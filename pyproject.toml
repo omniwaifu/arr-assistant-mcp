@@ -1,0 +1,10 @@
+[project]
+name = "arr-assistant-mcp"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=2.10.5",
+    "httpx>=0.28.1",
+]
