@@ -1,0 +1,205 @@
+name: Build and Release DXT Package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-dxt:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+    
+    - name: Create DXT package structure
+      run: |
+        # Create the DXT package directory
+        mkdir -p dxt-package/server
+        
+        # Copy source code
+        cp -r src/ dxt-package/
+        cp pyproject.toml dxt-package/
+        cp uv.lock dxt-package/
+        cp manifest.json dxt-package/
+        cp README.md dxt-package/
+        
+        # Install dependencies to server/lib for bundling
+        cd dxt-package
+        uv venv server/venv
+        source server/venv/bin/activate
+        uv pip install -e .
+        
+        # Create a more portable structure - copy installed packages to server/lib
+        mkdir -p server/lib
+        # Copy the installed packages to server/lib
+        cp -r server/venv/lib/python*/site-packages/* server/lib/
+        
+        # Update manifest.json to use the bundled dependencies
+        # Update the mcp_config to use the bundled environment
+        cat > manifest.json << 'EOF'
+        {
+          "dxt_version": "0.1",
+          "name": "arr-assistant-mcp",
+          "display_name": "Arr Assistant MCP Server",
+          "version": "0.1.0",
+          "description": "MCP server for adding movies and TV shows to Radarr/Sonarr via natural language queries",
+          "long_description": "A streamlined MCP server that provides 6 tools for managing your Radarr and Sonarr instances. Search for movies and TV shows using natural language, add content with automatic root folder detection, and monitor server status - all without requiring external API keys.",
+          "author": {
+            "name": "Justin Malloy (brickfrog)",
+            "email": "hi@justin.vc"
+          },
+          "repository": {
+            "type": "git",
+            "url": "https://github.com/omniwaifu/arr-assistant-mcp"
+          },
+          "homepage": "https://github.com/omniwaifu/arr-assistant-mcp",
+          "support": "https://github.com/omniwaifu/arr-assistant-mcp/issues",
+          "server": {
+            "type": "python",
+            "entry_point": "src/arr_assistant_mcp/main.py",
+            "mcp_config": {
+              "command": "python",
+              "args": [
+                "${__dirname}/src/arr_assistant_mcp/main.py"
+              ],
+              "env": {
+                "PYTHONPATH": "${__dirname}/server/lib:${__dirname}/src",
+                "RADARR_URL": "${user_config.radarr_url}",
+                "RADARR_API_KEY": "${user_config.radarr_api_key}",
+                "SONARR_URL": "${user_config.sonarr_url}",
+                "SONARR_API_KEY": "${user_config.sonarr_api_key}",
+                "QUALITY_PROFILE_ID": "${user_config.quality_profile_id}",
+                "RADARR_ROOT_FOLDER": "${user_config.radarr_root_folder}",
+                "SONARR_ROOT_FOLDER": "${user_config.sonarr_root_folder}",
+                "TVDB_API_KEY": "${user_config.tvdb_api_key}"
+              }
+            }
+          },
+          "tools": [
+            {
+              "name": "test_config",
+              "description": "Test configuration and connectivity to Radarr/Sonarr servers"
+            },
+            {
+              "name": "search_movies",
+              "description": "Search for movies by title using Radarr's built-in lookup"
+            },
+            {
+              "name": "add_movie_by_id",
+              "description": "Add a specific movie to Radarr using its TMDb ID with optional root folder"
+            },
+            {
+              "name": "search_and_add_show",
+              "description": "Search for TV shows and optionally add to Sonarr using natural language"
+            },
+            {
+              "name": "add_show_by_tvdb_id",
+              "description": "Add a specific TV show to Sonarr using its TVDB ID with optional root folder"
+            },
+            {
+              "name": "get_server_status",
+              "description": "Check the status and connectivity of Radarr and Sonarr servers"
+            }
+          ],
+          "keywords": ["radarr", "sonarr", "arr", "movies", "tv", "mcp", "media", "automation"],
+          "license": "MIT",
+          "compatibility": {
+            "platforms": ["darwin", "win32", "linux"],
+            "runtimes": {
+              "python": ">=3.12"
+            }
+          },
+          "user_config": {
+            "radarr_url": {
+              "type": "string",
+              "title": "Radarr URL",
+              "description": "URL to your Radarr instance (e.g., http://192.168.1.11:7878)",
+              "required": true
+            },
+            "radarr_api_key": {
+              "type": "string",
+              "title": "Radarr API Key",
+              "description": "API key for your Radarr instance (found in Settings > General)",
+              "sensitive": true,
+              "required": true
+            },
+            "sonarr_url": {
+              "type": "string",
+              "title": "Sonarr URL", 
+              "description": "URL to your Sonarr instance (e.g., http://192.168.1.11:8989)",
+              "required": true
+            },
+            "sonarr_api_key": {
+              "type": "string",
+              "title": "Sonarr API Key",
+              "description": "API key for your Sonarr instance (found in Settings > General)",
+              "sensitive": true,
+              "required": true
+            },
+            "quality_profile_id": {
+              "type": "number",
+              "title": "Quality Profile ID",
+              "description": "Default quality profile ID to use for new media",
+              "default": 1,
+              "min": 1,
+              "required": false
+            },
+            "radarr_root_folder": {
+              "type": "string",
+              "title": "Radarr Root Folder (Optional)",
+              "description": "Default root folder for movies (if not set, will auto-detect)",
+              "required": false
+            },
+            "sonarr_root_folder": {
+              "type": "string",
+              "title": "Sonarr Root Folder (Optional)",
+              "description": "Default root folder for TV shows (if not set, will auto-detect)",
+              "required": false
+            },
+            "tvdb_api_key": {
+              "type": "string",
+              "title": "TVDB API Key (Optional)",
+              "description": "API key for enhanced TV show search (optional)",
+              "sensitive": true,
+              "required": false
+            }
+          }
+        }
+        EOF
+        
+        # Clean up the venv since we copied to server/lib
+        rm -rf server/venv
+        
+        # List contents for debugging
+        echo "DXT package contents:"
+        find . -type f | head -20
+    
+    - name: Create DXT package archive
+      run: |
+        cd dxt-package
+        zip -r ../arr-assistant-mcp-${{ github.event.release.tag_name }}.dxt .
+        cd ..
+        
+        # Show the archive info
+        ls -la arr-assistant-mcp-*.dxt
+        unzip -l arr-assistant-mcp-*.dxt | head -20
+    
+    - name: Upload DXT package to release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release upload ${{ github.event.release.tag_name }} arr-assistant-mcp-${{ github.event.release.tag_name }}.dxt
