@@ -2,6 +2,10 @@
 
 MCP server for adding movies and TV shows to Radarr/Sonarr via natural language queries.
 
+<a href="https://glama.ai/mcp/servers/@omniwaifu/arr-assistant-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@omniwaifu/arr-assistant-mcp/badge" alt="arr-assistant-mcp MCP server" />
+</a>
+
 ## Setup
 
 Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
