@@ -57,6 +57,12 @@ class MediaServerAPI:
     def __init__(self, config: ServerConfig):
         self.config = config
         self.client = httpx.AsyncClient(timeout=30.0)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.client.aclose()
     
     def _select_best_match(self, query: str, results: List[MediaSearchResult]) -> Optional[MediaSearchResult]:
         """Just pick the first result - TMDb sorts by relevance anyway"""
@@ -311,42 +317,41 @@ async def search_movies(title: str) -> Dict[str, Any]:
         logger.error(error_msg)
         return {"error": error_msg, "results": []}
     
-    api = MediaServerAPI(config)
-    
-    try:
-        logger.info(f"Searching Radarr for: {title}")
-        radarr_results = await api.search_radarr_movies(title)
-        logger.info(f"Radarr returned {len(radarr_results)} results")
-        
-        if not radarr_results:
+    async with MediaServerAPI(config) as api:
+        try:
+            logger.info(f"Searching Radarr for: {title}")
+            radarr_results = await api.search_radarr_movies(title)
+            logger.info(f"Radarr returned {len(radarr_results)} results")
+
+            if not radarr_results:
+                return {
+                    "message": f"No movies found matching '{title}'",
+                    "results": [],
+                    "searched_query": title
+                }
+
+            results = []
+            for movie in radarr_results[:10]:  # Show more results since we're not auto-adding
+                result = MediaSearchResult(
+                    title=movie.get("title", "Unknown"),
+                    year=movie.get("year"),
+                    overview=movie.get("overview", "No overview available"),
+                    tmdb_id=movie.get("tmdbId"),
+                    poster_path=movie.get("remotePoster"),
+                    media_type="movie"
+                )
+                results.append(result)
+
             return {
-                "message": f"No movies found matching '{title}'",
-                "results": [],
+                "results": [r.dict() for r in results],
+                "total_found": len(results),
                 "searched_query": title
             }
-        
-        results = []
-        for movie in radarr_results[:10]:  # Show more results since we're not auto-adding
-            result = MediaSearchResult(
-                title=movie.get("title", "Unknown"),
-                year=movie.get("year"),
-                overview=movie.get("overview", "No overview available"),
-                tmdb_id=movie.get("tmdbId"),
-                poster_path=movie.get("remotePoster"),
-                media_type="movie"
-            )
-            results.append(result)
-        
-        return {
-            "results": [r.dict() for r in results],
-            "total_found": len(results),
-            "searched_query": title
-        }
-        
-    except Exception as e:
-        error_msg = f"Error during movie search: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        return {"error": error_msg, "results": []}
+
+        except Exception as e:
+            error_msg = f"Error during movie search: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {"error": error_msg, "results": []}
 
 @mcp.tool
 async def add_movie_by_id(tmdb_id: int, root_folder: Optional[str] = None) -> AddMediaResponse:
@@ -362,13 +367,12 @@ async def add_movie_by_id(tmdb_id: int, root_folder: Optional[str] = None) -> Ad
     """
     if not config:
         raise ValueError("Server not configured. Please set up Radarr API key.")
-    
-    api = MediaServerAPI(config)
-    
-    # Use TMDb ID as title placeholder - Radarr will fetch the real title
-    title = f"Movie (TMDb ID: {tmdb_id})"
-    
-    return await api.add_movie_to_radarr(tmdb_id, title, root_folder)
+
+    async with MediaServerAPI(config) as api:
+        # Use TMDb ID as title placeholder - Radarr will fetch the real title
+        title = f"Movie (TMDb ID: {tmdb_id})"
+
+        return await api.add_movie_to_radarr(tmdb_id, title, root_folder)
 
 @mcp.tool
 async def search_and_add_show(
@@ -387,35 +391,34 @@ async def search_and_add_show(
     """
     if not config:
         raise ValueError("Server not configured. Please set up Sonarr API key.")
-    
-    api = MediaServerAPI(config)
-    
-    # Search for TV shows using Sonarr lookup
-    tv_results = await api.search_sonarr_shows(description)
-    
-    results = []
-    for show in tv_results[:5]:  # Limit to top 5 results
-        result = MediaSearchResult(
-            title=show.get("title", "Unknown"),
-            year=show.get("year"),
-            overview=show.get("overview", "No overview available"),
-            tmdb_id=show.get("tmdbId"),
-            tvdb_id=show.get("tvdbId"),
-            poster_path=show.get("remotePoster"),
-            media_type="tv"
-        )
-        results.append(result)
-    
-    # Auto-add if requested and only one result
-    if auto_add and len(results) == 1:
-        show = results[0]
-        if show.tvdb_id:
-            add_result = await api.add_series_to_sonarr(show.tvdb_id, show.title, show.tmdb_id)
-            logger.info(f"Auto-add result: {add_result}")
-        else:
-            logger.warning(f"Cannot auto-add '{show.title}' - no TVDB ID available")
-    
-    return results
+
+    async with MediaServerAPI(config) as api:
+        # Search for TV shows using Sonarr lookup
+        tv_results = await api.search_sonarr_shows(description)
+
+        results = []
+        for show in tv_results[:5]:  # Limit to top 5 results
+            result = MediaSearchResult(
+                title=show.get("title", "Unknown"),
+                year=show.get("year"),
+                overview=show.get("overview", "No overview available"),
+                tmdb_id=show.get("tmdbId"),
+                tvdb_id=show.get("tvdbId"),
+                poster_path=show.get("remotePoster"),
+                media_type="tv"
+            )
+            results.append(result)
+
+        # Auto-add if requested and only one result
+        if auto_add and len(results) == 1:
+            show = results[0]
+            if show.tvdb_id:
+                add_result = await api.add_series_to_sonarr(show.tvdb_id, show.title)
+                logger.info(f"Auto-add result: {add_result}")
+            else:
+                logger.warning(f"Cannot auto-add '{show.title}' - no TVDB ID available")
+
+        return results
 
 @mcp.tool
 async def add_show_by_tvdb_id(tvdb_id: int, title: str, root_folder: Optional[str] = None) -> AddMediaResponse:
@@ -432,9 +435,9 @@ async def add_show_by_tvdb_id(tvdb_id: int, title: str, root_folder: Optional[st
     """
     if not config:
         raise ValueError("Server not configured. Please set up Sonarr API key.")
-    
-    api = MediaServerAPI(config)
-    return await api.add_series_to_sonarr(tvdb_id, title, root_folder)
+
+    async with MediaServerAPI(config) as api:
+        return await api.add_series_to_sonarr(tvdb_id, title, root_folder)
 
 @mcp.tool
 async def test_config() -> Dict[str, Any]:
@@ -464,16 +467,16 @@ async def test_config() -> Dict[str, Any]:
     # Test Radarr connectivity
     if config.radarr_api_key:
         try:
-            api = MediaServerAPI(config)
-            test_results = await api.search_radarr_movies("test")
-            status["radarr_search_connectivity"] = "success"
-            status["radarr_test_results"] = len(test_results)
+            async with MediaServerAPI(config) as api:
+                test_results = await api.search_radarr_movies("test")
+                status["radarr_search_connectivity"] = "success"
+                status["radarr_test_results"] = len(test_results)
         except Exception as e:
             status["radarr_search_connectivity"] = "failed"
             status["radarr_search_error"] = str(e)
     else:
         status["radarr_search_connectivity"] = "no_api_key"
-    
+
     return status
 
 @mcp.tool
@@ -486,17 +489,16 @@ async def get_server_status() -> Dict[str, Any]:
     """
     if not config:
         return {"error": "Server not configured"}
-    
-    api = MediaServerAPI(config)
-    
-    radarr_status = await api.check_radarr_status()
-    sonarr_status = await api.check_sonarr_status()
-    
-    return {
-        "radarr": radarr_status,
-        "sonarr": sonarr_status,
-        "timestamp": datetime.now().isoformat()
-    }
+
+    async with MediaServerAPI(config) as api:
+        radarr_status = await api.check_radarr_status()
+        sonarr_status = await api.check_sonarr_status()
+
+        return {
+            "radarr": radarr_status,
+            "sonarr": sonarr_status,
+            "timestamp": datetime.now().isoformat()
+        }
 
 def setup_config(
     radarr_url: str,
