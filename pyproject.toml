@@ -1,10 +1,36 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
 [project]
 name = "arr-assistant-mcp"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.1.1"
+description = "MCP server for searching and adding movies and TV shows in Radarr and Sonarr"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "fastmcp>=2.10.5",
-    "httpx>=0.28.1",
+authors = [
+    { name = "Justin Malloy", email = "hi@justin.vc" },
 ]
+license = { text = "MIT" }
+dependencies = [
+    "fastmcp>=3.1.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.11.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/omniwaifu/arr-assistant-mcp"
+Repository = "https://github.com/omniwaifu/arr-assistant-mcp"
+Issues = "https://github.com/omniwaifu/arr-assistant-mcp/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/arr_assistant_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

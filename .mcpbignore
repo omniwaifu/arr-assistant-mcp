@@ -1,0 +1,25 @@
+# Development and VCS metadata
+/.git/
+/.github/
+/.venv/
+/.vscode/
+/.idea/
+/.python-version
+
+# Python caches and build output
+__pycache__/
+*.py[cod]
+*.egg-info/
+/build/
+/dist/
+/htmlcov/
+/.pytest_cache/
+/.coverage
+
+# Local-only files
+/.env*
+/CLAUDE.md
+/main.py
+/tests/
+/coverage.xml
+/tmp/

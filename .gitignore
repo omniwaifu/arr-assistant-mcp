@@ -52,6 +52,7 @@ Thumbs.db
 
 # Local config
 .env.local
+.env*
 
 # Testing
 .coverage
@@ -60,4 +61,7 @@ htmlcov/
 
 # uv
 .uv
-EOF < /dev/null
+
+# Bundle artifacts
+*.dxt
+*.mcpb

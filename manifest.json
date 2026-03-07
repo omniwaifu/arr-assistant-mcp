@@ -1,10 +1,11 @@
 {
-  "dxt_version": "0.1",
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/schemas/mcpb-manifest-v0.4.schema.json",
+  "manifest_version": "0.4",
   "name": "arr-assistant-mcp",
   "display_name": "Arr Assistant MCP Server",
-  "version": "0.1.0",
-  "description": "MCP server for adding movies and TV shows to Radarr/Sonarr via natural language queries",
-  "long_description": "A streamlined MCP server that provides 6 tools for managing your Radarr and Sonarr instances. Search for movies and TV shows using natural language, add content with automatic root folder detection, and monitor server status - all without requiring external API keys.",
+  "version": "0.1.1",
+  "description": "MCP server for searching and adding movies and TV shows in Radarr and Sonarr",
+  "long_description": "A streamlined MCP server that provides tools for searching movies and TV shows, adding them to Radarr and Sonarr, and checking server connectivity with automatic root folder detection.",
   "author": {
     "name": "Justin Malloy (brickfrog)",
     "email": "hi@justin.vc"
@@ -14,19 +15,18 @@
     "url": "https://github.com/omniwaifu/arr-assistant-mcp"
   },
   "homepage": "https://github.com/omniwaifu/arr-assistant-mcp",
+  "documentation": "https://github.com/omniwaifu/arr-assistant-mcp#readme",
   "support": "https://github.com/omniwaifu/arr-assistant-mcp/issues",
   "server": {
-    "type": "python",
+    "type": "uv",
     "entry_point": "src/arr_assistant_mcp/main.py",
     "mcp_config": {
       "command": "uv",
       "args": [
         "run",
-        "--with",
-        "arr-assistant-mcp@${__dirname}",
-        "python",
-        "-m",
-        "arr_assistant_mcp.main"
+        "--project",
+        "${__dirname}",
+        "src/arr_assistant_mcp/main.py"
       ],
       "env": {
         "RADARR_URL": "${user_config.radarr_url}",
@@ -35,15 +35,14 @@
         "SONARR_API_KEY": "${user_config.sonarr_api_key}",
         "QUALITY_PROFILE_ID": "${user_config.quality_profile_id}",
         "RADARR_ROOT_FOLDER": "${user_config.radarr_root_folder}",
-        "SONARR_ROOT_FOLDER": "${user_config.sonarr_root_folder}",
-        "TVDB_API_KEY": "${user_config.tvdb_api_key}"
+        "SONARR_ROOT_FOLDER": "${user_config.sonarr_root_folder}"
       }
     }
   },
   "tools": [
     {
       "name": "test_config",
-      "description": "Test configuration and connectivity to Radarr/Sonarr servers"
+      "description": "Test configuration and connectivity to Radarr and Sonarr"
     },
     {
       "name": "search_movies",
@@ -51,25 +50,39 @@
     },
     {
       "name": "add_movie_by_id",
-      "description": "Add a specific movie to Radarr using its TMDb ID with optional root folder"
+      "description": "Add a specific movie to Radarr using its TMDb ID with an optional root folder"
     },
     {
       "name": "search_and_add_show",
-      "description": "Search for TV shows and optionally add to Sonarr using natural language"
+      "description": "Search for TV shows and optionally add the best match to Sonarr"
     },
     {
       "name": "add_show_by_tvdb_id",
-      "description": "Add a specific TV show to Sonarr using its TVDB ID with optional root folder"
+      "description": "Add a specific TV show to Sonarr using its TVDB ID with an optional root folder"
     },
     {
       "name": "get_server_status",
       "description": "Check the status and connectivity of Radarr and Sonarr servers"
     }
   ],
-  "keywords": ["radarr", "sonarr", "arr", "movies", "tv", "mcp", "media", "automation"],
+  "keywords": [
+    "radarr",
+    "sonarr",
+    "arr",
+    "movies",
+    "tv",
+    "mcp",
+    "media",
+    "automation"
+  ],
   "license": "MIT",
+  "privacy_policies": [],
   "compatibility": {
-    "platforms": ["darwin", "win32", "linux"],
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
     "runtimes": {
       "python": ">=3.12"
     }
@@ -78,26 +91,26 @@
     "radarr_url": {
       "type": "string",
       "title": "Radarr URL",
-      "description": "URL to your Radarr instance (e.g., http://192.168.1.11:7878)",
+      "description": "URL to your Radarr instance (for example, http://192.168.1.11:7878)",
       "required": true
     },
     "radarr_api_key": {
       "type": "string",
       "title": "Radarr API Key",
-      "description": "API key for your Radarr instance (found in Settings > General)",
+      "description": "API key for your Radarr instance (Settings > General)",
       "sensitive": true,
       "required": true
     },
     "sonarr_url": {
       "type": "string",
-      "title": "Sonarr URL", 
-      "description": "URL to your Sonarr instance (e.g., http://192.168.1.11:8989)",
+      "title": "Sonarr URL",
+      "description": "URL to your Sonarr instance (for example, http://192.168.1.11:8989)",
       "required": true
     },
     "sonarr_api_key": {
       "type": "string",
       "title": "Sonarr API Key",
-      "description": "API key for your Sonarr instance (found in Settings > General)",
+      "description": "API key for your Sonarr instance (Settings > General)",
       "sensitive": true,
       "required": true
     },
@@ -111,21 +124,14 @@
     },
     "radarr_root_folder": {
       "type": "string",
-      "title": "Radarr Root Folder (Optional)",
-      "description": "Default root folder for movies (if not set, will auto-detect)",
+      "title": "Radarr Root Folder",
+      "description": "Default movie root folder. If omitted, the server auto-detects one.",
       "required": false
     },
     "sonarr_root_folder": {
       "type": "string",
-      "title": "Sonarr Root Folder (Optional)",
-      "description": "Default root folder for TV shows (if not set, will auto-detect)",
-      "required": false
-    },
-    "tvdb_api_key": {
-      "type": "string",
-      "title": "TVDB API Key (Optional)",
-      "description": "API key for enhanced TV show search (optional)",
-      "sensitive": true,
+      "title": "Sonarr Root Folder",
+      "description": "Default TV root folder. If omitted, the server auto-detects one.",
       "required": false
     }
   }

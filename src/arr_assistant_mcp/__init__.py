@@ -1,3 +1,3 @@
-"""Natural Language Media Server MCP"""
+"""Arr Assistant MCP."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
