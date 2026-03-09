@@ -3,7 +3,7 @@
   "manifest_version": "0.4",
   "name": "arr-assistant-mcp",
   "display_name": "Arr Assistant MCP Server",
-  "version": "0.1.2",
+  "version": "0.1.1",
   "description": "MCP server for searching and adding movies and TV shows in Radarr and Sonarr",
   "long_description": "A streamlined MCP server that provides tools for searching movies and TV shows, adding them to Radarr and Sonarr, and checking server connectivity with automatic root folder detection.",
   "author": {

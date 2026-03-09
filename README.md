@@ -4,14 +4,12 @@ MCP server for searching movies and TV shows and adding them to Radarr and Sonar
 
 ## Setup
 
-Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/) 0.10.9 or newer for local development.
+Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/) for local development.
 
 ```bash
 git clone <repo>
 cd arr-assistant-mcp
 uv sync
-uv run ruff check
-uv run pytest
 ```
 
 ## Run From Source
@@ -51,8 +49,8 @@ Packaged release artifacts should now use the `.mcpb` extension.
 
 ```bash
 npm install -g @anthropic-ai/mcpb
-mcpb validate manifest.json
-mcpb pack . dist/arr-assistant-mcp-vX.Y.Z.mcpb
+mcpb validate .
+mcpb pack . arr-assistant-mcp.mcpb
 ```
 
 Open the resulting `.mcpb` file in Claude Desktop to install it.
@@ -62,17 +60,7 @@ Open the resulting `.mcpb` file in Claude Desktop to install it.
 - **Radarr/Sonarr API keys**: Settings -> General -> API Key
 - **Quality profile**: Use the numeric profile ID from your Radarr or Sonarr instance
 - **Root folders**: If omitted, the server auto-detects the first available root folder from each service
-- **TVDB API key**: Not used by the current implementation
-
-## Release Flow
-
-Pushing a `v*` tag triggers GitHub Actions to:
-
-- install the pinned `uv` toolchain
-- run `ruff` and `pytest`
-- validate and pack the `.mcpb`
-- create or update the GitHub release
-- upload the `.mcpb`, wheel, and source tarball
+- **TVDB API key**: Not required for the current implementation
 
 ## Tools
 

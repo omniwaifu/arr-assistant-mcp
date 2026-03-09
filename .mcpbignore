@@ -14,7 +14,6 @@ __pycache__/
 /dist/
 /htmlcov/
 /.pytest_cache/
-/.ruff_cache/
 /.coverage
 
 # Local-only files
