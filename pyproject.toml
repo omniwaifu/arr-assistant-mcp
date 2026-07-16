@@ -1,21 +1,22 @@
 [build-system]
-requires = ["hatchling>=1.27.0"]
+requires = ["hatchling>=1.31.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "arr-assistant-mcp"
-version = "0.1.1"
+version = "0.2.0"
 description = "MCP server for searching and adding movies and TV shows in Radarr and Sonarr"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
     { name = "Justin Malloy", email = "hi@justin.vc" },
 ]
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
-    "fastmcp>=3.1.0",
+    "fastmcp>=3.4.4",
     "httpx>=0.28.1",
-    "pydantic>=2.11.7",
+    "pydantic>=2.13.4",
 ]
 
 [project.urls]
@@ -25,12 +26,26 @@ Issues = "https://github.com/omniwaifu/arr-assistant-mcp/issues"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4.2",
-    "pytest-asyncio>=1.2.0",
+    "pip-audit>=2.10.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.15.22",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/arr_assistant_mcp"]
 
+[tool.uv]
+required-version = ">=0.11.28"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "live: opt-in read-only tests against configured Radarr and Sonarr instances",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]

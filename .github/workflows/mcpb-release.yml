@@ -1,52 +1,101 @@
-name: Build and Release MCPB Bundle
+name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
 
 jobs:
-  build-mcpb:
+  build-and-release:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v7
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
-    - name: Install uv
-      uses: astral-sh/setup-uv@v3
-      with:
-        version: "latest"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          version: "0.11.28"
+          enable-cache: true
 
-    - name: Install test dependencies
-      run: uv sync --group dev
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
 
-    - name: Run tests
-      run: uv run pytest
+      - name: Install dependencies
+        run: uv sync --group dev --frozen
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
+      - name: Verify lockfile
+        run: uv lock --check
 
-    - name: Validate MCPB manifest
-      run: npx -y @anthropic-ai/mcpb@2.1.2 validate manifest.json
+      - name: Lint
+        run: uv run ruff check src tests
 
-    - name: Create MCPB bundle
-      run: npx -y @anthropic-ai/mcpb@2.1.2 pack . arr-assistant-mcp-${{ github.event.release.tag_name }}.mcpb
+      - name: Check formatting
+        run: uv run ruff format --check src tests
 
-    - name: Show MCPB bundle info
-      run: npx -y @anthropic-ai/mcpb@2.1.2 info arr-assistant-mcp-${{ github.event.release.tag_name }}.mcpb
+      - name: Run tests
+        run: uv run pytest
 
-    - name: Upload MCPB bundle to release
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        gh release upload ${{ github.event.release.tag_name }} arr-assistant-mcp-${{ github.event.release.tag_name }}.mcpb
+      - name: Audit installed dependencies
+        run: uv run pip-audit --local
+
+      - name: Verify release version metadata
+        run: |
+          uv run python - <<'PY'
+          import json
+          import os
+          import tomllib
+          from pathlib import Path
+
+          from arr_assistant_mcp import __version__
+
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+          manifest = json.loads(Path("manifest.json").read_text())
+          project_version = pyproject["project"]["version"]
+          expected_tag = f"v{project_version}"
+          actual_tag = os.environ["GITHUB_REF_NAME"]
+
+          if manifest["version"] != project_version:
+              raise SystemExit("manifest.json and pyproject.toml versions do not match")
+          if __version__ != project_version:
+              raise SystemExit("package and pyproject.toml versions do not match")
+          if actual_tag != expected_tag:
+              raise SystemExit(f"tag {actual_tag} does not match expected {expected_tag}")
+          PY
+
+      - name: Build Python distributions
+        run: uv build
+
+      - name: Validate MCPB manifest
+        run: npx -y @anthropic-ai/mcpb@2.1.2 validate manifest.json
+
+      - name: Pack MCPB bundle
+        run: npx -y @anthropic-ai/mcpb@2.1.2 pack . dist/arr-assistant-mcp-${{ github.ref_name }}.mcpb
+
+      - name: Inspect MCPB bundle
+        run: npx -y @anthropic-ai/mcpb@2.1.2 info dist/arr-assistant-mcp-${{ github.ref_name }}.mcpb
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${GITHUB_REF_NAME}" --verify-tag --generate-notes
+
+      - name: Upload release artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            dist/arr-assistant-mcp-${GITHUB_REF_NAME}.mcpb \
+            dist/*.whl \
+            dist/*.tar.gz

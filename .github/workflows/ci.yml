@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          version: "0.11.28"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --group dev --frozen
+
+      - name: Lint
+        run: uv run ruff check src tests
+
+      - name: Check formatting
+        run: uv run ruff format --check src tests
+
+      - name: Run tests
+        run: uv run pytest
+
+  package:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          version: "0.11.28"
+          enable-cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: uv sync --group dev --frozen
+
+      - name: Verify lockfile
+        run: uv lock --check
+
+      - name: Audit installed dependencies
+        run: uv run pip-audit --local
+
+      - name: Validate MCPB manifest
+        run: npx -y @anthropic-ai/mcpb@2.1.2 validate manifest.json
+
+      - name: Pack MCPB bundle
+        run: npx -y @anthropic-ai/mcpb@2.1.2 pack . /tmp/arr-assistant-mcp.mcpb
+
+      - name: Inspect MCPB bundle
+        run: npx -y @anthropic-ai/mcpb@2.1.2 info /tmp/arr-assistant-mcp.mcpb
