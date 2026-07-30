@@ -122,6 +122,6 @@ keys into source files, test fixtures, shell scripts, or commits.
 ## Releases
 
 Versions are kept in sync across `pyproject.toml`, `manifest.json`, and the package. Pushing a tag
-matching the project version (for example, `v0.2.0`) runs linting, tests, a dependency
+matching the project version (for example, `v0.2.1`) runs linting, tests, a dependency
 audit, and package validation before publishing the MCPB, wheel, and source distribution to a
 GitHub release.
