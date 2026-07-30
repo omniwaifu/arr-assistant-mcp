@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import gzip
 import json
+import logging
 import tomllib
-from collections.abc import Generator
+from collections.abc import AsyncIterator, Generator
 from pathlib import Path
 
 import httpx
@@ -11,7 +13,12 @@ from fastmcp import Client
 
 from arr_assistant_mcp import __version__
 from arr_assistant_mcp import main as server_main
-from arr_assistant_mcp.main import AddMediaResponse, MediaServerAPI, ServerConfig
+from arr_assistant_mcp.main import (
+    AddMediaResponse,
+    ArrResponseTooLargeError,
+    MediaServerAPI,
+    ServerConfig,
+)
 
 
 def make_config() -> ServerConfig:
@@ -37,6 +44,176 @@ def test_server_config_normalizes_base_urls() -> None:
 
     assert config.radarr_url == "http://radarr.local"
     assert config.sonarr_url == "http://sonarr.local"
+
+
+@pytest.mark.parametrize(
+    ("url", "should_warn"),
+    [
+        ("http://localhost:7878", False),
+        ("http://radarr.localhost:7878", False),
+        ("http://127.0.0.1:7878", False),
+        ("http://[::1]:7878", False),
+        ("https://radarr.example.com", False),
+        ("http://192.168.1.11:7878", True),
+        ("http://radarr.internal:7878", True),
+    ],
+)
+def test_server_config_warns_for_non_loopback_plaintext_http(
+    url: str,
+    should_warn: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=server_main.__name__)
+
+    ServerConfig(
+        radarr_url=url,
+        radarr_api_key="secret-api-key",
+        sonarr_url="https://sonarr.example.com",
+        sonarr_api_key="another-secret",
+    )
+
+    warnings = [record.getMessage() for record in caplog.records]
+    assert bool(warnings) is should_warn
+    assert all("secret-api-key" not in warning for warning in warnings)
+    assert all("another-secret" not in warning for warning in warnings)
+    if should_warn:
+        assert warnings == [
+            f"Radarr API credentials will be sent over plaintext HTTP to "
+            f"{url}; use HTTPS or a trusted private network"
+        ]
+
+
+def test_server_config_warns_once_for_each_plaintext_service(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger=server_main.__name__)
+
+    ServerConfig(
+        radarr_url="http://radarr.internal:7878",
+        radarr_api_key="radarr-key",
+        sonarr_url="http://sonarr.internal:8989",
+        sonarr_api_key="sonarr-key",
+    )
+
+    assert [record.getMessage() for record in caplog.records] == [
+        "Radarr API credentials will be sent over plaintext HTTP to "
+        "http://radarr.internal:7878; use HTTPS or a trusted private network",
+        "Sonarr API credentials will be sent over plaintext HTTP to "
+        "http://sonarr.internal:8989; use HTTPS or a trusted private network",
+    ]
+
+
+class TrackingStream(httpx.AsyncByteStream):
+    def __init__(self, chunks: list[bytes]):
+        self.chunks = chunks
+        self.closed = False
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for chunk in self.chunks:
+            yield chunk
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.parametrize("payload", [b"1234", b"12345678"])
+@pytest.mark.asyncio
+async def test_bounded_reader_accepts_payloads_through_exact_limit_and_closes_response(
+    payload: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_main, "MAX_RESPONSE_BYTES", 8)
+    stream = TrackingStream([payload])
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=stream, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        api = MediaServerAPI(make_config(), client=client)
+        response = await api._request("Radarr", "GET", "http://radarr.local/test")
+
+    assert response.content == payload
+    assert stream.closed is True
+
+
+@pytest.mark.asyncio
+async def test_bounded_reader_rejects_chunked_overflow_and_closes_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_main, "MAX_RESPONSE_BYTES", 8)
+    stream = TrackingStream([b"1234", b"5678", b"9"])
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=stream, request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        api = MediaServerAPI(make_config(), client=client)
+        with pytest.raises(ArrResponseTooLargeError, match="Radarr response exceeded"):
+            await api._request("Radarr", "GET", "http://radarr.local/test")
+
+    assert stream.closed is True
+
+
+@pytest.mark.asyncio
+async def test_bounded_reader_limits_decoded_compressed_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_main, "MAX_RESPONSE_BYTES", 8)
+    compressed = gzip.compress(b"123456789")
+    stream = TrackingStream([compressed])
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"Content-Encoding": "gzip"},
+            stream=stream,
+            request=request,
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        api = MediaServerAPI(make_config(), client=client)
+        with pytest.raises(ArrResponseTooLargeError, match="Radarr response exceeded"):
+            await api._request("Radarr", "GET", "http://radarr.local/test")
+
+    assert stream.closed is True
+
+
+@pytest.mark.asyncio
+async def test_all_arr_response_paths_enforce_shared_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_main, "MAX_RESPONSE_BYTES", 8)
+    config = make_config()
+    config.radarr_root_folder = "/movies"
+    config.sonarr_root_folder = "/shows"
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"123456789", request=request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        api = MediaServerAPI(config, client=client)
+
+        assert await api.get_radarr_root_folders() == []
+        assert await api.get_sonarr_root_folders() == []
+
+        with pytest.raises(ArrResponseTooLargeError):
+            await api.search_radarr_movies("Matrix")
+        with pytest.raises(ArrResponseTooLargeError):
+            await api.search_sonarr_shows("Doctor Who")
+
+        movie_result = await api.add_movie_to_radarr(603, "The Matrix")
+        show_result = await api.add_series_to_sonarr(78804, "Doctor Who")
+        assert movie_result.success is False
+        assert "exceeded the" in movie_result.message
+        assert show_result.success is False
+        assert "exceeded the" in show_result.message
+
+        radarr_status = await api.check_radarr_status()
+        sonarr_status = await api.check_sonarr_status()
+        assert radarr_status["status"] == "error"
+        assert "exceeded the" in radarr_status["message"]
+        assert sonarr_status["status"] == "error"
+        assert "exceeded the" in sonarr_status["message"]
 
 
 @pytest.mark.asyncio

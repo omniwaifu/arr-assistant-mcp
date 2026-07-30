@@ -32,9 +32,9 @@ Add this to your `claude_desktop_config.json` to run the checked-out project dir
         "src/arr_assistant_mcp/main.py"
       ],
       "env": {
-        "RADARR_URL": "http://your-ip:7878",
+        "RADARR_URL": "https://radarr.example.com",
         "RADARR_API_KEY": "your-radarr-api-key",
-        "SONARR_URL": "http://your-ip:8989",
+        "SONARR_URL": "https://sonarr.example.com",
         "SONARR_API_KEY": "your-sonarr-api-key",
         "QUALITY_PROFILE_ID": "1",
         "RADARR_ROOT_FOLDER": "/storage/movies",
@@ -47,15 +47,19 @@ Add this to your `claude_desktop_config.json` to run the checked-out project dir
 
 Trailing slashes in `RADARR_URL` and `SONARR_URL` are normalized automatically. API keys are
 required for the corresponding service. Never commit them; pass them through your MCP client or
-local environment.
+local environment. Prefer HTTPS because Arr API keys are sent with every request. Plain HTTP is
+safe for loopback URLs; for a trusted LAN or VPN where HTTPS is unavailable, the server allows
+plain HTTP but logs a warning identifying the service and destination.
 
 ## Build An MCP Bundle
 
 Packaged release artifacts should now use the `.mcpb` extension.
 
 ```bash
-npx -y @anthropic-ai/mcpb@2.1.2 validate manifest.json
-npx -y @anthropic-ai/mcpb@2.1.2 pack . arr-assistant-mcp.mcpb
+npm ci --prefix .github/mcpb-tooling --ignore-scripts
+npm audit --prefix .github/mcpb-tooling --audit-level=moderate
+npm exec --prefix .github/mcpb-tooling -- mcpb validate manifest.json
+npm exec --prefix .github/mcpb-tooling -- mcpb pack . arr-assistant-mcp.mcpb
 ```
 
 Open the resulting `.mcpb` file in Claude Desktop to install it.
@@ -105,9 +109,9 @@ read-only status and root-folder requests against locally configured services:
 
 ```bash
 ARR_ASSISTANT_LIVE_TESTS=1 \
-RADARR_URL=http://your-arr-host:7878 \
+RADARR_URL=https://radarr.example.com \
 RADARR_API_KEY=your-radarr-api-key \
-SONARR_URL=http://your-arr-host:8989 \
+SONARR_URL=https://sonarr.example.com \
 SONARR_API_KEY=your-sonarr-api-key \
 uv run pytest tests/test_live.py -v
 ```

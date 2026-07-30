@@ -1,10 +1,12 @@
 """Arr Assistant MCP server for Radarr and Sonarr."""
 
+import ipaddress
 import logging
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from fastmcp import FastMCP
@@ -15,6 +17,17 @@ logger = logging.getLogger(__name__)
 DEFAULT_RADARR_URL = "http://localhost:7878"
 DEFAULT_SONARR_URL = "http://localhost:8989"
 DEFAULT_QUALITY_PROFILE_ID = 1
+MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+RESPONSE_CHUNK_BYTES = 64 * 1024
+
+
+class ArrResponseTooLargeError(httpx.HTTPError):
+    """Raised when an Arr server returns more decoded data than we accept."""
+
+    def __init__(self, service: str):
+        super().__init__(
+            f"{service} response exceeded the {MAX_RESPONSE_BYTES // (1024 * 1024)} MiB limit"
+        )
 
 
 # Configuration models
@@ -31,6 +44,38 @@ class ServerConfig:
     def __post_init__(self) -> None:
         self.radarr_url = self.radarr_url.rstrip("/")
         self.sonarr_url = self.sonarr_url.rstrip("/")
+        self._warn_for_plaintext_credentials("Radarr", self.radarr_url)
+        self._warn_for_plaintext_credentials("Sonarr", self.sonarr_url)
+
+    @staticmethod
+    def _warn_for_plaintext_credentials(service: str, url: str) -> None:
+        parsed = urlsplit(url)
+        if parsed.scheme.lower() != "http" or not parsed.hostname:
+            return
+
+        hostname = parsed.hostname.rstrip(".").lower()
+        is_loopback = hostname == "localhost" or hostname.endswith(".localhost")
+        if not is_loopback:
+            try:
+                is_loopback = ipaddress.ip_address(hostname).is_loopback
+            except ValueError:
+                pass
+
+        if is_loopback:
+            return
+
+        display_host = f"[{hostname}]" if ":" in hostname else hostname
+        try:
+            display_port = f":{parsed.port}" if parsed.port is not None else ""
+        except ValueError:
+            display_port = ""
+        origin = f"http://{display_host}{display_port}"
+        logger.warning(
+            "%s API credentials will be sent over plaintext HTTP to %s; "
+            "use HTTPS or a trusted private network",
+            service,
+            origin,
+        )
 
 
 # Response models
@@ -82,6 +127,34 @@ class MediaServerAPI:
             await self.client.aclose()
 
     @staticmethod
+    async def _read_bounded_response(
+        response: httpx.Response,
+        service: str,
+    ) -> bytes:
+        body = bytearray()
+        async for chunk in response.aiter_bytes(chunk_size=RESPONSE_CHUNK_BYTES):
+            if len(chunk) > MAX_RESPONSE_BYTES - len(body):
+                raise ArrResponseTooLargeError(service)
+            body.extend(chunk)
+        return bytes(body)
+
+    async def _request(
+        self,
+        service: str,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        async with self.client.stream(method, url, **kwargs) as response:
+            body = await self._read_bounded_response(response, service)
+            return httpx.Response(
+                status_code=response.status_code,
+                headers=response.headers,
+                content=body,
+                request=response.request,
+            )
+
+    @staticmethod
     def _extract_error_message(response: httpx.Response) -> str:
         try:
             payload = response.json()
@@ -119,7 +192,7 @@ class MediaServerAPI:
         headers = {"X-Api-Key": self.config.radarr_api_key}
 
         try:
-            response = await self.client.get(url, headers=headers)
+            response = await self._request("Radarr", "GET", url, headers=headers)
             response.raise_for_status()
             payload = response.json()
             return payload if isinstance(payload, list) else []
@@ -133,7 +206,7 @@ class MediaServerAPI:
         headers = {"X-Api-Key": self.config.sonarr_api_key}
 
         try:
-            response = await self.client.get(url, headers=headers)
+            response = await self._request("Sonarr", "GET", url, headers=headers)
             response.raise_for_status()
             payload = response.json()
             return payload if isinstance(payload, list) else []
@@ -150,7 +223,13 @@ class MediaServerAPI:
         logger.info(f"Radarr lookup request: {url} with term='{query}'")
 
         try:
-            response = await self.client.get(url, params=params, headers=headers)
+            response = await self._request(
+                "Radarr",
+                "GET",
+                url,
+                params=params,
+                headers=headers,
+            )
             logger.info(f"Radarr response status: {response.status_code}")
 
             if response.status_code == 401:
@@ -162,6 +241,8 @@ class MediaServerAPI:
 
             response.raise_for_status()
             results = response.json()
+            if not isinstance(results, list):
+                raise ValueError("Radarr lookup response was not a list")
             logger.info(f"Radarr returned {len(results)} results for query '{query}'")
 
             if results:
@@ -217,7 +298,13 @@ class MediaServerAPI:
             logger.info("Using auto-detected Radarr root folder: %s", detected_root_folder)
 
         try:
-            response = await self.client.post(url, json=payload, headers=headers)
+            response = await self._request(
+                "Radarr",
+                "POST",
+                url,
+                json=payload,
+                headers=headers,
+            )
             if response.is_success:
                 result = response.json()
                 return AddMediaResponse(
@@ -229,7 +316,7 @@ class MediaServerAPI:
                 success=False,
                 message=f"Failed to add movie: {self._extract_error_message(response)}",
             )
-        except httpx.RequestError as exc:
+        except (httpx.RequestError, ArrResponseTooLargeError) as exc:
             logger.error("Radarr API error: %s", exc)
             return AddMediaResponse(
                 success=False,
@@ -251,7 +338,13 @@ class MediaServerAPI:
         logger.info(f"Sonarr lookup request: {url} with term='{query}'")
 
         try:
-            response = await self.client.get(url, params=params, headers=headers)
+            response = await self._request(
+                "Sonarr",
+                "GET",
+                url,
+                params=params,
+                headers=headers,
+            )
             logger.info(f"Sonarr response status: {response.status_code}")
 
             if response.status_code == 401:
@@ -263,6 +356,8 @@ class MediaServerAPI:
 
             response.raise_for_status()
             results = response.json()
+            if not isinstance(results, list):
+                raise ValueError("Sonarr lookup response was not a list")
             logger.info(f"Sonarr returned {len(results)} results for query '{query}'")
 
             if results:
@@ -314,7 +409,13 @@ class MediaServerAPI:
             logger.info("Using auto-detected Sonarr root folder: %s", detected_root_folder)
 
         try:
-            response = await self.client.post(url, json=payload, headers=headers)
+            response = await self._request(
+                "Sonarr",
+                "POST",
+                url,
+                json=payload,
+                headers=headers,
+            )
             if response.is_success:
                 result = response.json()
                 return AddMediaResponse(
@@ -326,7 +427,7 @@ class MediaServerAPI:
                 success=False,
                 message=f"Failed to add series: {self._extract_error_message(response)}",
             )
-        except httpx.RequestError as exc:
+        except (httpx.RequestError, ArrResponseTooLargeError) as exc:
             logger.error("Sonarr API error: %s", exc)
             return AddMediaResponse(
                 success=False,
@@ -345,12 +446,12 @@ class MediaServerAPI:
         headers = {"X-Api-Key": self.config.radarr_api_key}
 
         try:
-            response = await self.client.get(url, headers=headers)
+            response = await self._request("Radarr", "GET", url, headers=headers)
             response.raise_for_status()
             return {"status": "connected", "data": response.json()}
         except httpx.HTTPStatusError as exc:
             return {"status": "error", "message": self._extract_error_message(exc.response)}
-        except (httpx.RequestError, ValueError) as exc:
+        except (httpx.RequestError, ArrResponseTooLargeError, ValueError) as exc:
             return {"status": "error", "message": str(exc)}
 
     async def check_sonarr_status(self) -> dict[str, Any]:
@@ -359,12 +460,12 @@ class MediaServerAPI:
         headers = {"X-Api-Key": self.config.sonarr_api_key}
 
         try:
-            response = await self.client.get(url, headers=headers)
+            response = await self._request("Sonarr", "GET", url, headers=headers)
             response.raise_for_status()
             return {"status": "connected", "data": response.json()}
         except httpx.HTTPStatusError as exc:
             return {"status": "error", "message": self._extract_error_message(exc.response)}
-        except (httpx.RequestError, ValueError) as exc:
+        except (httpx.RequestError, ArrResponseTooLargeError, ValueError) as exc:
             return {"status": "error", "message": str(exc)}
 
 
