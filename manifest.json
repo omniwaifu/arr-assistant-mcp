@@ -91,7 +91,7 @@
     "radarr_url": {
       "type": "string",
       "title": "Radarr URL",
-      "description": "URL to your Radarr instance (for example, http://192.168.1.11:7878)",
+      "description": "URL to your Radarr instance (HTTPS recommended; plain HTTP sends the API key unencrypted)",
       "required": true
     },
     "radarr_api_key": {
@@ -104,7 +104,7 @@
     "sonarr_url": {
       "type": "string",
       "title": "Sonarr URL",
-      "description": "URL to your Sonarr instance (for example, http://192.168.1.11:8989)",
+      "description": "URL to your Sonarr instance (HTTPS recommended; plain HTTP sends the API key unencrypted)",
       "required": true
     },
     "sonarr_api_key": {

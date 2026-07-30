@@ -65,3 +65,6 @@ htmlcov/
 # Bundle artifacts
 *.dxt
 *.mcpb
+
+# Node tooling
+node_modules/

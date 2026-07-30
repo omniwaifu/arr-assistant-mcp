@@ -1,0 +1,12 @@
+{
+  "name": "arr-assistant-mcpb-tooling",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Pinned tooling used to validate and build the Arr Assistant MCPB",
+  "dependencies": {
+    "@anthropic-ai/mcpb": "2.1.2"
+  },
+  "overrides": {
+    "tmp": "0.2.7"
+  }
+}

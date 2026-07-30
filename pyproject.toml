@@ -14,7 +14,7 @@ authors = [
 license = "MIT"
 license-files = ["LICENSE"]
 dependencies = [
-    "fastmcp>=3.4.4",
+    "fastmcp>=3.4.5,<4",
     "httpx>=0.28.1",
     "pydantic>=2.13.4",
 ]

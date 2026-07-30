@@ -15,3 +15,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  - package-ecosystem: npm
+    directory: /.github/mcpb-tooling
+    schedule:
+      interval: weekly
