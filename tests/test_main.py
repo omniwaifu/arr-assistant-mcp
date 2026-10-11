@@ -4,6 +4,7 @@ import gzip
 import json
 import logging
 import tomllib
+import zlib
 from collections.abc import AsyncIterator, Generator
 from pathlib import Path
 
@@ -116,6 +117,45 @@ class TrackingStream(httpx.AsyncByteStream):
         self.closed = True
 
 
+@pytest.mark.parametrize("encoding", ["gzip", "deflate"])
+@pytest.mark.parametrize("status_code", [200, 400])
+@pytest.mark.asyncio
+async def test_bounded_reader_preserves_decoded_compressed_response(
+    encoding: str,
+    status_code: int,
+) -> None:
+    payload = b'{"message":"Arr response","title":"The Matrix"}'
+    compressed = gzip.compress(payload) if encoding == "gzip" else zlib.compress(payload)
+    stream = TrackingStream([compressed[:10], compressed[10:]])
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code,
+            headers={
+                "Content-Encoding": encoding,
+                "Content-Length": str(len(compressed)),
+                "Content-Type": "application/json",
+                "X-Arr-Version": "test-version",
+            },
+            stream=stream,
+            request=request,
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        api = MediaServerAPI(make_config(), client=client)
+        response = await api._request("Radarr", "GET", "http://radarr.local/test")
+
+    assert response.content == payload
+    assert response.json()["title"] == "The Matrix"
+    assert response.status_code == status_code
+    assert response.headers["Content-Type"] == "application/json"
+    assert response.headers["X-Arr-Version"] == "test-version"
+    assert "Content-Encoding" not in response.headers
+    assert int(response.headers["Content-Length"]) == len(payload)
+    assert response.request.url == "http://radarr.local/test"
+    assert stream.closed is True
+
+
 @pytest.mark.parametrize("payload", [b"1234", b"12345678"])
 @pytest.mark.asyncio
 async def test_bounded_reader_accepts_payloads_through_exact_limit_and_closes_response(
@@ -126,13 +166,20 @@ async def test_bounded_reader_accepts_payloads_through_exact_limit_and_closes_re
     stream = TrackingStream([payload])
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, stream=stream, request=request)
+        return httpx.Response(
+            200,
+            headers={"Transfer-Encoding": "chunked"},
+            stream=stream,
+            request=request,
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         api = MediaServerAPI(make_config(), client=client)
         response = await api._request("Radarr", "GET", "http://radarr.local/test")
 
     assert response.content == payload
+    assert "Transfer-Encoding" not in response.headers
+    assert int(response.headers["Content-Length"]) == len(payload)
     assert stream.closed is True
 
 

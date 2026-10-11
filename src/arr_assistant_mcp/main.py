@@ -147,9 +147,14 @@ class MediaServerAPI:
     ) -> httpx.Response:
         async with self.client.stream(method, url, **kwargs) as response:
             body = await self._read_bounded_response(response, service)
+            # aiter_bytes has already decoded the body. Let HTTPX calculate its
+            # new length and avoid decoding it again using the wire headers.
+            headers = response.headers.copy()
+            for header in ("Content-Encoding", "Content-Length", "Transfer-Encoding"):
+                headers.pop(header, None)
             return httpx.Response(
                 status_code=response.status_code,
-                headers=response.headers,
+                headers=headers,
                 content=body,
                 request=response.request,
             )
