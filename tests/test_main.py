@@ -501,6 +501,38 @@ async def test_mcp_server_exposes_expected_tools() -> None:
     }
 
 
+@pytest.mark.asyncio
+async def test_mcp_client_calls_show_search_with_structured_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queries: list[str] = []
+
+    async def fake_search(self: MediaServerAPI, query: str) -> list[dict[str, object]]:
+        queries.append(query)
+        return [{"title": "Doctor Who", "overview": "Time travel", "tvdbId": 78804}]
+
+    async def unexpected_add(*args: object, **kwargs: object) -> AddMediaResponse:
+        raise AssertionError("Read-only MCP search must not add media")
+
+    monkeypatch.setattr(MediaServerAPI, "search_sonarr_shows", fake_search)
+    monkeypatch.setattr(MediaServerAPI, "add_series_to_sonarr", unexpected_add)
+
+    async with Client(server_main.mcp) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+        schema = tools["search_and_add_show"].inputSchema
+        assert schema["required"] == ["description"]
+        assert schema["properties"]["auto_add"]["default"] is False
+        result = await client.call_tool("search_and_add_show", {"description": "Doctor Who"})
+
+    assert queries == ["Doctor Who"]
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["auto_add_requested"] is False
+    assert result.structured_content["auto_add_result"] is None
+    assert result.structured_content["results"][0]["tvdb_id"] == 78804
+    assert result.data.results[0].title == "Doctor Who"
+
+
 def test_get_int_env_falls_back_for_invalid_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
