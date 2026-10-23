@@ -486,7 +486,7 @@ def _require_config(service_name: str) -> ServerConfig:
 
 
 # MCP Tools
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 async def search_movies(title: str) -> dict[str, Any]:
     """
     Search for movies by title using Radarr's built-in lookup.
@@ -542,7 +542,7 @@ async def search_movies(title: str) -> dict[str, Any]:
         return {"error": error_msg, "results": []}
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": False})
 async def add_movie_by_id(tmdb_id: int, root_folder: str | None = None) -> AddMediaResponse:
     """
     Add a specific movie to Radarr using its TMDb ID.
@@ -563,7 +563,8 @@ async def add_movie_by_id(tmdb_id: int, root_folder: str | None = None) -> AddMe
         return await api.add_movie_to_radarr(tmdb_id, title, root_folder)
 
 
-@mcp.tool
+# The tool can POST to Sonarr when auto_add=True, even though search is the default.
+@mcp.tool(annotations={"readOnlyHint": False})
 async def search_and_add_show(description: str, auto_add: bool = False) -> ShowSearchResponse:
     """
     Search for TV shows using natural language description and optionally add to Sonarr.
@@ -628,7 +629,7 @@ async def search_and_add_show(description: str, auto_add: bool = False) -> ShowS
         )
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": False})
 async def add_show_by_tvdb_id(
     tvdb_id: int, title: str, root_folder: str | None = None
 ) -> AddMediaResponse:
@@ -649,7 +650,7 @@ async def add_show_by_tvdb_id(
         return await api.add_series_to_sonarr(tvdb_id, title, root_folder)
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 async def test_config() -> dict[str, Any]:
     """
     Test the current configuration and API connectivity.
@@ -697,7 +698,7 @@ async def test_config() -> dict[str, Any]:
     return status
 
 
-@mcp.tool
+@mcp.tool(annotations={"readOnlyHint": True})
 async def get_server_status() -> dict[str, Any]:
     """
     Check the status and connectivity of Radarr and Sonarr servers.
