@@ -487,18 +487,33 @@ async def test_get_server_status_uses_utc_timestamp(
 
 
 @pytest.mark.asyncio
-async def test_mcp_server_exposes_expected_tools() -> None:
+async def test_mcp_server_exposes_expected_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    requests_seen: list[httpx.Request] = []
+
+    async def unexpected_send(
+        self: httpx.AsyncClient, request: httpx.Request, **kwargs: object
+    ) -> httpx.Response:
+        requests_seen.append(request)
+        raise AssertionError("Tool discovery must not make HTTP requests")
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", unexpected_send)
+
     async with Client(server_main.mcp) as client:
         tools = await client.list_tools()
 
-    assert {tool.name for tool in tools} == {
-        "add_movie_by_id",
-        "add_show_by_tvdb_id",
-        "get_server_status",
-        "search_and_add_show",
-        "search_movies",
-        "test_config",
+    expected_read_only = {
+        "add_movie_by_id": False,
+        "add_show_by_tvdb_id": False,
+        "get_server_status": True,
+        "search_and_add_show": False,
+        "search_movies": True,
+        "test_config": True,
     }
+    assert {tool.name for tool in tools} == expected_read_only.keys()
+    for tool in tools:
+        serialized = tool.model_dump(mode="json", by_alias=True, exclude_none=True)
+        assert serialized["annotations"]["readOnlyHint"] is expected_read_only[tool.name]
+    assert requests_seen == []
 
 
 @pytest.mark.asyncio
