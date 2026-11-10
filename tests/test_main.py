@@ -11,6 +11,7 @@ from pathlib import Path
 import httpx
 import pytest
 from fastmcp import Client
+from fastmcp.client.transports import PythonStdioTransport
 
 from arr_assistant_mcp import __version__
 from arr_assistant_mcp import main as server_main
@@ -534,7 +535,7 @@ async def test_mcp_client_calls_show_search_with_structured_response(
 
     async with Client(server_main.mcp) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
-        schema = tools["search_and_add_show"].inputSchema
+        schema = tools["search_and_add_show"].input_schema
         assert schema["required"] == ["description"]
         assert schema["properties"]["auto_add"]["default"] is False
         result = await client.call_tool("search_and_add_show", {"description": "Doctor Who"})
@@ -546,6 +547,30 @@ async def test_mcp_client_calls_show_search_with_structured_response(
     assert result.structured_content["auto_add_result"] is None
     assert result.structured_content["results"][0]["tvdb_id"] == 78804
     assert result.data.results[0].title == "Doctor Who"
+
+
+@pytest.mark.asyncio
+async def test_stdio_entry_point_loads_configuration_without_credentials() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    transport = PythonStdioTransport(
+        repo_root / "src/arr_assistant_mcp/main.py",
+        env={
+            "FASTMCP_CHECK_FOR_UPDATES": "off",
+            "RADARR_URL": "http://localhost:7878",
+            "SONARR_URL": "http://localhost:8989",
+            "RADARR_API_KEY": "",
+            "SONARR_API_KEY": "",
+        },
+        keep_alive=False,
+    )
+    async with Client(transport, timeout=10) as client:
+        assert len(await client.list_tools()) == 6
+        result = await client.call_tool("test_config", {})
+
+    assert result.is_error is False
+    assert result.data["config_loaded"] is True
+    assert result.data["radarr_connectivity"] == "no_api_key"
+    assert result.data["sonarr_connectivity"] == "no_api_key"
 
 
 def test_get_int_env_falls_back_for_invalid_values(

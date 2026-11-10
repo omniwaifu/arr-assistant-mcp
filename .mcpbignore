@@ -4,6 +4,9 @@
 /.venv/
 /.vscode/
 /.idea/
+/.agents/
+/.codex/
+/.aws/
 /.python-version
 
 # Python caches and build output

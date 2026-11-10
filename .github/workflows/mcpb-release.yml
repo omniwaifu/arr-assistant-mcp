@@ -84,6 +84,9 @@ jobs:
         run: uv build
 
       - name: Validate MCPB manifest
+        run: npm test --prefix .github/mcpb-tooling
+
+      - name: Validate MCPB manifest with CLI
         run: npm exec --prefix .github/mcpb-tooling -- mcpb validate manifest.json
 
       - name: Pack MCPB bundle

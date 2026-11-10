@@ -27,6 +27,8 @@ Add this to your `claude_desktop_config.json` to run the checked-out project dir
       "command": "uv",
       "args": [
         "run",
+        "--locked",
+        "--no-dev",
         "--project",
         "/path/to/arr-assistant-mcp",
         "src/arr_assistant_mcp/main.py"
@@ -58,11 +60,17 @@ Packaged release artifacts should now use the `.mcpb` extension.
 ```bash
 npm ci --prefix .github/mcpb-tooling --ignore-scripts
 npm audit --prefix .github/mcpb-tooling --audit-level=moderate
+npm test --prefix .github/mcpb-tooling
 npm exec --prefix .github/mcpb-tooling -- mcpb validate manifest.json
 npm exec --prefix .github/mcpb-tooling -- mcpb pack . arr-assistant-mcp.mcpb
 ```
 
 Open the resulting `.mcpb` file in Claude Desktop to install it.
+
+The tooling pins Zod 4.6.6 to address
+[GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5), since MCPB 2.1.2
+still requests Zod 3. The tooling tests check our manifest's validation behavior with this
+override. Revisit the override when MCPB updates its dependency.
 
 ## Configuration Notes
 
@@ -102,7 +110,12 @@ Run the local checks with:
 uv run ruff check src tests
 uv run ruff format --check src tests
 uv run pytest
+uv run pip-audit --local
 ```
+
+CI also runs weekly and can be triggered manually, so dependency advisories are checked even
+when there are no code changes. Runtime examples use `--locked --no-dev` to install the checked-in
+dependency versions without development tools.
 
 The default suite never contacts a real Arr instance. An additional opt-in suite performs only
 read-only status and root-folder requests against locally configured services:

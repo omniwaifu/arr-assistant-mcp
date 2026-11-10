@@ -5,6 +5,9 @@ on:
     branches:
       - master
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 9 * * 1"
 
 permissions:
   contents: read
@@ -84,6 +87,9 @@ jobs:
         run: npm audit --prefix .github/mcpb-tooling --audit-level=moderate
 
       - name: Validate MCPB manifest
+        run: npm test --prefix .github/mcpb-tooling
+
+      - name: Validate MCPB manifest with CLI
         run: npm exec --prefix .github/mcpb-tooling -- mcpb validate manifest.json
 
       - name: Pack MCPB bundle

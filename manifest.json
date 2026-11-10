@@ -24,6 +24,8 @@
       "command": "uv",
       "args": [
         "run",
+        "--locked",
+        "--no-dev",
         "--project",
         "${__dirname}",
         "src/arr_assistant_mcp/main.py"
