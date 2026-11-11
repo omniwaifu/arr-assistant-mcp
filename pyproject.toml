@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "arr-assistant-mcp"
-version = "0.2.3"
+version = "0.3.0"
 description = "MCP server for searching and adding movies and TV shows in Radarr and Sonarr"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -35,6 +35,9 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/arr_assistant_mcp"]
+
+[tool.hatch.build.targets.sdist.force-include]
+".env.example" = ".env.example"
 
 [tool.uv]
 required-version = ">=0.11.33"
