@@ -1,0 +1,22 @@
+services:
+  arr-assistant:
+    build: .
+    image: arr-assistant-mcp:local
+    restart: unless-stopped
+    ports:
+      - "${ARR_MCP_BIND_ADDRESS:-127.0.0.1}:${ARR_MCP_PORT:-8000}:8000"
+    environment:
+      ARR_MCP_TOKEN: ${ARR_MCP_TOKEN:?Set a random token of at least 32 characters in .env}
+      ARR_MCP_ALLOWED_HOSTS: ${ARR_MCP_ALLOWED_HOSTS:-}
+      RADARR_URL: ${RADARR_URL:?Set RADARR_URL in .env}
+      RADARR_API_KEY: ${RADARR_API_KEY:?Set RADARR_API_KEY in .env}
+      SONARR_URL: ${SONARR_URL:?Set SONARR_URL in .env}
+      SONARR_API_KEY: ${SONARR_API_KEY:?Set SONARR_API_KEY in .env}
+      QUALITY_PROFILE_ID: ${QUALITY_PROFILE_ID:-1}
+      RADARR_ROOT_FOLDER: ${RADARR_ROOT_FOLDER:-}
+      SONARR_ROOT_FOLDER: ${SONARR_ROOT_FOLDER:-}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

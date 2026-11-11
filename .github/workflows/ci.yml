@@ -77,6 +77,9 @@ jobs:
       - name: Verify lockfile
         run: uv lock --check
 
+      - name: Build and test Docker image
+        run: bash scripts/test-container.sh
+
       - name: Audit installed dependencies
         run: uv run pip-audit --local
 

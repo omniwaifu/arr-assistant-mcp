@@ -1,8 +1,11 @@
 """Arr Assistant MCP server for Radarr and Sonarr."""
 
+import hashlib
+import hmac
 import ipaddress
 import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -10,7 +13,10 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastmcp import FastMCP
+from fastmcp.server.auth import AccessToken, TokenVerifier
 from pydantic import BaseModel
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +109,27 @@ class ShowSearchResponse(BaseModel):
 
 # Initialize FastMCP server
 mcp = FastMCP("Arr Assistant MCP Server")
+
+
+class BearerTokenVerifier(TokenVerifier):
+    """Verify a shared deployment token without retaining its plaintext value."""
+
+    def __init__(self, token: str):
+        super().__init__()
+        self._token_digest = hashlib.sha256(token.encode()).digest()
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        digest = hashlib.sha256(token.encode()).digest()
+        if not hmac.compare_digest(digest, self._token_digest):
+            return None
+        return AccessToken(token=token, client_id="arr-assistant", scopes=[])
+
+
+@mcp.custom_route("/healthz", methods=["GET"])
+async def healthz(request: Request) -> JSONResponse:
+    """Process liveness only; never expose credentials or contact Arr services."""
+    return JSONResponse({"status": "ok"})
+
 
 # Global config (will be set via environment or config file)
 config: ServerConfig | None = None
@@ -767,6 +794,52 @@ def load_config_from_env() -> None:
     )
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Run stdio locally or authenticated, stateless Streamable HTTP remotely."""
+    transport = os.getenv("ARR_MCP_TRANSPORT", "stdio").strip().lower()
+    if transport not in {"stdio", "http"}:
+        raise SystemExit("ARR_MCP_TRANSPORT must be stdio or http")
+
+    if transport == "stdio":
+        load_config_from_env()
+        mcp.run(transport="stdio")
+        return
+
+    token = os.getenv("ARR_MCP_TOKEN", "")
+    if len(token) < 32 or not re.fullmatch(r"[A-Za-z0-9._~+/-]+=*", token):
+        raise SystemExit(
+            "HTTP requires ARR_MCP_TOKEN: at least 32 bearer-token characters; "
+            "generate one with openssl rand -hex 32"
+        )
+
+    host = os.getenv("ARR_MCP_HOST", "127.0.0.1").strip()
+    if not host:
+        raise SystemExit("ARR_MCP_HOST must not be empty")
+    try:
+        port = int(os.getenv("ARR_MCP_PORT", "8000"))
+        if not 1 <= port <= 65535:
+            raise ValueError
+    except ValueError:
+        raise SystemExit("ARR_MCP_PORT must be an integer between 1 and 65535") from None
+
+    allowed_hosts = [
+        value.strip()
+        for value in os.getenv("ARR_MCP_ALLOWED_HOSTS", "").split(",")
+        if value.strip()
+    ]
     load_config_from_env()
-    mcp.run()
+    mcp.auth = BearerTokenVerifier(token)
+    mcp.run(
+        transport="http",
+        host=host,
+        port=port,
+        path="/mcp",
+        stateless_http=True,
+        json_response=True,
+        host_origin_protection=True,
+        allowed_hosts=allowed_hosts,
+    )
+
+
+if __name__ == "__main__":
+    main()

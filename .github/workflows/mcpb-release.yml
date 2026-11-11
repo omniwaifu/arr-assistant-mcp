@@ -47,6 +47,9 @@ jobs:
       - name: Run tests
         run: uv run pytest
 
+      - name: Build and test Docker image
+        run: bash scripts/test-container.sh
+
       - name: Audit installed dependencies
         run: uv run pip-audit --local
 

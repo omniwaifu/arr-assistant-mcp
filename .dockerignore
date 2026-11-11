@@ -1,0 +1,8 @@
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+!src/
+!src/arr_assistant_mcp/
+!src/arr_assistant_mcp/*.py

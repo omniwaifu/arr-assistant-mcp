@@ -556,6 +556,7 @@ async def test_stdio_entry_point_loads_configuration_without_credentials() -> No
         repo_root / "src/arr_assistant_mcp/main.py",
         env={
             "FASTMCP_CHECK_FOR_UPDATES": "off",
+            "ARR_MCP_TRANSPORT": "stdio",
             "RADARR_URL": "http://localhost:7878",
             "SONARR_URL": "http://localhost:8989",
             "RADARR_API_KEY": "",
